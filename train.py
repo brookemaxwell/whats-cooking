@@ -1,9 +1,11 @@
 import json
 from sklearn.feature_extraction.text import TfidfTransformer
 from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.naive_bayes import MultinomialNB
-from sklearn.linear_model import SGDClassifier
+from sklearn.naive_bayes import MultinomialNB, BernoulliNB
+from sklearn.linear_model import SGDClassifier, ElasticNet
+from sklearn.ensemble import VotingClassifier
 from sklearn.pipeline import Pipeline
+from sklearn.svm import SVC
 from sklearn import metrics
 import re
 from sklearn import tree
@@ -74,6 +76,22 @@ def naive_bayes():
 
     return text_clf
 
+def ensemble():
+
+    vt = VotingClassifier(estimators=[('sgd1', SGDClassifier(loss='hinge', penalty='l2', alpha=1e-3, n_iter=5, random_state=42)),
+                                      ('sgd2', SGDClassifier(loss='modified_huber', penalty='l2', alpha=1e-3, n_iter=5, random_state=42)),
+                                      ('sgd3', SGDClassifier(loss='squared_hinge', penalty='l2', alpha=1e-3, n_iter=5, random_state=42)),
+                                      #('mnb1', MultinomialNB()),
+                                      #('mnb2', MultinomialNB(alpha=0.5)), #this hurts us
+                                      #('svc', SVC()), # really really slow. No improvement
+                                      ('bnb1', BernoulliNB()),
+                                      ('bnb2', BernoulliNB(alpha=0.5))], voting='hard')
+
+    eclf = Pipeline([('vect', CountVectorizer()),
+                         #('tfidf', TfidfTransformer()), #frequency. removing improved. why?
+                         ('vote', vt)])
+    #eclf = VotingClassifier(estimators=[('sgd', sgd()), ('nb', naive_bayes())], voting='hard')
+    return eclf
 
 def try_local(filename, algorithm):
     features, labels, label_set = parse_recipe_file(filename)
@@ -87,10 +105,9 @@ def try_local(filename, algorithm):
     predicted = algorithm.predict(test_features)
     accuracy = mean(predicted == test_labels)
 
-    print(accuracy)
-
     print(metrics.classification_report(test_labels, predicted, target_names=label_set))
 
+    print("Overall Accuracy: " + str(accuracy))
 
 def try_kaggle(training_filename, test_filename, algorithm):
 
@@ -113,7 +130,7 @@ def main():
     training_filename = 'Data/train.json'
     kaggle_test_filename = 'Data/test.json'
 
-    text_clf = sgd()
+    text_clf = ensemble()
     try_local(training_filename, text_clf)
     #try_kaggle(training_filename, kaggle_test_filename, text_clf)
 
