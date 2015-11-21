@@ -1,14 +1,17 @@
 import json
 from sklearn.feature_extraction.text import TfidfTransformer
 from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.decomposition import TruncatedSVD
 from sklearn.naive_bayes import MultinomialNB, BernoulliNB
 from sklearn.linear_model import SGDClassifier, ElasticNet
-from sklearn.ensemble import VotingClassifier
-from sklearn.pipeline import Pipeline
+from sklearn.ensemble import VotingClassifier, BaggingClassifier, RandomForestClassifier, ExtraTreesClassifier
+from sklearn.pipeline import Pipeline, FeatureUnion
+from sklearn import tree
 from sklearn.svm import SVC
 from sklearn import metrics
+from sklearn.neural_network import MLPClassifier
 import re
-from sklearn import tree
+from sklearn import tree, cross_validation
 from numpy import *
 from sklearn.externals.six import StringIO
 import random
@@ -76,38 +79,98 @@ def naive_bayes():
 
     return text_clf
 
-def ensemble():
+def decision_tree():
+    text_clf = Pipeline([('vect', CountVectorizer()),
+                         ('svd', TruncatedSVD(n_components=500)),
+                         ('dt', tree.DecisionTreeClassifier())
+    ])
+    return text_clf
 
+def voting_ensemble():
     vt = VotingClassifier(estimators=[('sgd1', SGDClassifier(loss='hinge', penalty='l2', alpha=1e-3, n_iter=5, random_state=42)),
+                                      ('sgd2', SGDClassifier(loss='modified_huber', penalty='l2', alpha=1e-3, n_iter=5, random_state=42)),
+                                      ('sgd3', SGDClassifier(loss='squared_hinge', penalty='l2', alpha=1e-3, n_iter=5, random_state=42)),
+
+                                      #('mnb1', MultinomialNB()),
+                                      #('mnb2', MultinomialNB(alpha=0.5)), #this hurts us
+                                      #('svc', SVC()), # really really slow. No improvement
+                                      # ('dt_stuff', decision_tree()),
+                                      ('bnb1', BernoulliNB()),
+                                      ('bnb2', BernoulliNB(alpha=0.5)),
+                                      #('rf', ExtraTreesClassifier(n_estimators=200, max_features='auto', verbose=3, n_jobs=-1)),
+                                      ('rf', ExtraTreesClassifier(n_estimators=200, max_features='auto', verbose=3, n_jobs=-1)),
+                                      ('mlp', MLPClassifier(verbose=True))], voting='hard')
+
+    eclf = Pipeline([('vect', CountVectorizer(binary=True, max_df=0.5)),
+                     ('vote', vt)])
+    #eclf = VotingClassifier(estimators=[('sgd', sgd()), ('nb', naive_bayes())], voting='hard')
+    return eclf
+
+def bagging_ensemble(estimator):
+    """
+    bag = BaggingClassifier(estimators=[('sgd1', SGDClassifier(loss='hinge', penalty='l2', alpha=1e-3, n_iter=5, random_state=42)),
                                       ('sgd2', SGDClassifier(loss='modified_huber', penalty='l2', alpha=1e-3, n_iter=5, random_state=42)),
                                       ('sgd3', SGDClassifier(loss='squared_hinge', penalty='l2', alpha=1e-3, n_iter=5, random_state=42)),
                                       #('mnb1', MultinomialNB()),
                                       #('mnb2', MultinomialNB(alpha=0.5)), #this hurts us
                                       #('svc', SVC()), # really really slow. No improvement
+                                      # ('dt_stuff', decision_tree()),
                                       ('bnb1', BernoulliNB()),
                                       ('bnb2', BernoulliNB(alpha=0.5))], voting='hard')
+    """
+    bag = BaggingClassifier(base_estimator=estimator, n_estimators=20, max_samples=0.4)
 
     eclf = Pipeline([('vect', CountVectorizer()),
                          #('tfidf', TfidfTransformer()), #frequency. removing improved. why?
-                         ('vote', vt)])
+                         ('bag', bag)])
     #eclf = VotingClassifier(estimators=[('sgd', sgd()), ('nb', naive_bayes())], voting='hard')
     return eclf
+
+def ensemble_of_ultimate_glory():
+    vt= VotingClassifier(estimators=[('ve', voting_ensemble()),
+                                     #('be', bagging_ensemble(MultinomialNB())),
+                                     ('be2', bagging_ensemble(BernoulliNB())),
+                                     ('be3', bagging_ensemble(SGDClassifier(loss='hinge', penalty='l2', alpha=1e-3, n_iter=5, random_state=42)))], voting='hard')
+    return vt
+
+def random_forest():
+    rf = Pipeline([('vect', CountVectorizer()),
+                   ('rf', RandomForestClassifier(n_estimators=100, max_features='auto', verbose=3, n_jobs=-1))])
+
+    return rf
+
+
+def extra_random_forest():
+    rf = Pipeline([('vect', CountVectorizer()),
+                   ('rf', ExtraTreesClassifier(n_estimators=100, max_features='auto', verbose=3, n_jobs=-1))])
+
+    return rf
+
+def deep_learning():
+    nn = Pipeline([('vect', CountVectorizer()),
+                   ('mlp', MLPClassifier(verbose=True))])
+
+    return nn
+
 
 def try_local(filename, algorithm):
     features, labels, label_set = parse_recipe_file(filename)
     label_set = asarray(label_set)
     print("file_parsed")
 
-    training_features, training_labels, test_features, test_labels = split_test_and_training(features, labels)
+    '''training_features, training_labels, test_features, test_labels = split_test_and_training(features, labels)
 
     algorithm.fit(training_features, training_labels)
 
     predicted = algorithm.predict(test_features)
     accuracy = mean(predicted == test_labels)
 
-    print(metrics.classification_report(test_labels, predicted, target_names=label_set))
+    print(metrics.classification_report(test_labels, predicted, target_names=label_set))'''
+    scores = cross_validation.cross_val_score(algorithm, features, labels, cv=5, n_jobs=-1)
+    print(scores)
+    print(scores.mean())
 
-    print("Overall Accuracy: " + str(accuracy))
+    #print("Overall Accuracy: " + str(accuracy))
 
 def try_kaggle(training_filename, test_filename, algorithm):
 
@@ -130,7 +193,7 @@ def main():
     training_filename = 'Data/train.json'
     kaggle_test_filename = 'Data/test.json'
 
-    text_clf = ensemble()
+    text_clf = voting_ensemble()
     try_local(training_filename, text_clf)
     #try_kaggle(training_filename, kaggle_test_filename, text_clf)
 
