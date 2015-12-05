@@ -62,18 +62,39 @@ def split_test_and_training(features, labels, percent_training=0.7):
     return training_features, training_labels, test_features, test_labels
 
 
+def multinomial_nb():
+    text_clf = Pipeline([('vect', CountVectorizer(ngram_range=(1, 1))),
+                         #('tfidf', TfidfTransformer()),
+                         ('mnb', MultinomialNB())
+                         ])
+
+    return text_clf
+
+
 def sgd():
-    text_clf = Pipeline([('vect', CountVectorizer()),
-                         ('tfidf', TfidfTransformer()),
+    text_clf = Pipeline([('vect', CountVectorizer(ngram_range=(1, 3))),
+                         #('tfidf', TfidfTransformer()),
                          ('sgd', SGDClassifier(loss='hinge', penalty='l2', alpha=1e-3, n_iter=5, random_state=42))
                          ])
 
     return text_clf
 
 
+def bagging_sgd():
+    text_clf = bagging_ensemble(SGDClassifier(loss='hinge', penalty='l2', alpha=1e-3, n_iter=5, random_state=42))
+
+    return text_clf
+
+
+def bagging_bnb():
+    text_clf = bagging_ensemble(BernoulliNB())
+
+    return text_clf
+
+
 def naive_bayes():
-    text_clf = Pipeline([('vect', CountVectorizer()),
-                         ('tfidf', TfidfTransformer()),
+    text_clf = Pipeline([('vect', CountVectorizer(ngram_range=(1, 1))),
+                         #('tfidf', TfidfTransformer()),
                          ('clf', MultinomialNB())
                          ])
 
@@ -81,7 +102,7 @@ def naive_bayes():
 
 def decision_tree():
     text_clf = Pipeline([('vect', CountVectorizer()),
-                         ('svd', TruncatedSVD(n_components=500)),
+                         # ('svd', TruncatedSVD(n_components=500)),
                          ('dt', tree.DecisionTreeClassifier())
     ])
     return text_clf
@@ -97,11 +118,12 @@ def voting_ensemble():
                                       # ('dt_stuff', decision_tree()),
                                       ('bnb1', BernoulliNB()),
                                       ('bnb2', BernoulliNB(alpha=0.5)),
-                                      #('rf', ExtraTreesClassifier(n_estimators=200, max_features='auto', verbose=3, n_jobs=-1)),
                                       ('rf', ExtraTreesClassifier(n_estimators=200, max_features='auto', verbose=3, n_jobs=-1)),
-                                      ('mlp', MLPClassifier(verbose=True))], voting='hard')
+                                      ('rf', ExtraTreesClassifier(n_estimators=200, max_features='auto', verbose=3, n_jobs=-1))
+                                      #('mlp', MLPClassifier(verbose=True))]
+                                      ] , voting='hard')
 
-    eclf = Pipeline([('vect', CountVectorizer(binary=True, max_df=0.5)),
+    eclf = Pipeline([('vect', CountVectorizer(binary=True, max_df=0.5, ngram_range=(1, 1))),
                      ('vote', vt)])
     #eclf = VotingClassifier(estimators=[('sgd', sgd()), ('nb', naive_bayes())], voting='hard')
     return eclf
@@ -120,7 +142,7 @@ def bagging_ensemble(estimator):
     """
     bag = BaggingClassifier(base_estimator=estimator, n_estimators=20, max_samples=0.4)
 
-    eclf = Pipeline([('vect', CountVectorizer()),
+    eclf = Pipeline([('vect', CountVectorizer(ngram_range=(1, 1))),
                          #('tfidf', TfidfTransformer()), #frequency. removing improved. why?
                          ('bag', bag)])
     #eclf = VotingClassifier(estimators=[('sgd', sgd()), ('nb', naive_bayes())], voting='hard')
@@ -141,7 +163,7 @@ def random_forest():
 
 
 def extra_random_forest():
-    rf = Pipeline([('vect', CountVectorizer()),
+    rf = Pipeline([('vect', CountVectorizer(ngram_range=(1, 1))),
                    ('rf', ExtraTreesClassifier(n_estimators=100, max_features='auto', verbose=3, n_jobs=-1))])
 
     return rf
@@ -165,12 +187,30 @@ def try_local(filename, algorithm):
     predicted = algorithm.predict(test_features)
     accuracy = mean(predicted == test_labels)
 
+
     print(metrics.classification_report(test_labels, predicted, target_names=label_set))'''
     scores = cross_validation.cross_val_score(algorithm, features, labels, cv=5, n_jobs=-1)
     print(scores)
     print(scores.mean())
 
     #print("Overall Accuracy: " + str(accuracy))
+
+
+def try_local_metrics(filename, algorithm):
+    features, labels, label_set = parse_recipe_file(filename)
+    label_set = asarray(label_set)
+    print("file_parsed")
+
+    training_features, training_labels, test_features, test_labels = split_test_and_training(features, labels)
+
+    algorithm.fit(training_features, training_labels)
+
+    predicted = algorithm.predict(test_features)
+    accuracy = mean(predicted == test_labels)
+
+
+    print(metrics.classification_report(test_labels, predicted, target_names=label_set))
+
 
 def try_kaggle(training_filename, test_filename, algorithm):
 
@@ -194,7 +234,7 @@ def main():
     kaggle_test_filename = 'Data/test.json'
 
     text_clf = voting_ensemble()
-    try_local(training_filename, text_clf)
+    try_local_metrics(training_filename, text_clf)
     #try_kaggle(training_filename, kaggle_test_filename, text_clf)
 
 
